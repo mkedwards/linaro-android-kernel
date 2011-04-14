@@ -158,7 +158,10 @@ PVRSRV_ERROR EnableSGXClocks(SYS_DATA *psSysData)
 	PVR_DPF((PVR_DBG_MESSAGE, "EnableSGXClocks: Enabling SGX Clocks"));
 
 #if defined(LDM_PLATFORM) && !defined(PVR_DRI_DRM_NOT_PCI)
-//	omap_device_set_rate(&gpsPVRLDMDev->dev, SYS_SGX_CLOCK_SPEED);
+#ifdef ENABLE_CALL_TO_OMAP_DEVICE_SET_RATE
+	omap_device_set_rate(&gpsPVRLDMDev->dev,
+			&gpsPVRLDMDev->dev, SYS_SGX_CLOCK_SPEED);
+#endif
 
 	{
 
@@ -205,7 +208,10 @@ IMG_VOID DisableSGXClocks(SYS_DATA *psSysData)
 			PVR_DPF((PVR_DBG_ERROR, "DisableSGXClocks: pm_runtime_put_sync failed (%d)", -res));
 		}
 	}
-//	omap_device_set_rate(&gpsPVRLDMDev->dev, 0);
+#ifdef ENABLE_CALL_TO_OMAP_DEVICE_SET_RATE
+	omap_device_set_rate(&gpsPVRLDMDev->dev,
+			&gpsPVRLDMDev->dev, 0);
+#endif
 #endif
 
 	
