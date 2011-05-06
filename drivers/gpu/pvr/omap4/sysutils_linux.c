@@ -160,7 +160,7 @@ PVRSRV_ERROR EnableSGXClocks(SYS_DATA *psSysData)
 #if defined(LDM_PLATFORM) && !defined(PVR_DRI_DRM_NOT_PCI)
 #ifdef ENABLE_CALL_TO_OMAP_DEVICE_SET_RATE
 	omap_device_set_rate(&gpsPVRLDMDev->dev,
-			&gpsPVRLDMDev->dev, SYS_SGX_CLOCK_SPEED);
+			&gpsPVRLDMDev->dev, SYS_SGX_OPP119_CLK_SPEED);
 #endif
 
 	{
