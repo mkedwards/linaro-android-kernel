@@ -226,8 +226,11 @@ static void OMAPLFBFlipNoLock(OMAPLFB_SWAPCHAIN *psSwapChain,
 							overlay_info.width,
 							overlay_info.height);
 
-		}
+		} else
 #endif
+		if (manager && manager->wait_for_go) {
+			manager->wait_for_go(manager);
+		}
 	}
 }
 
