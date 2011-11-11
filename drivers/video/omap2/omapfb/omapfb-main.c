@@ -1257,11 +1257,6 @@ static int omapfb_blank(int blank, struct fb_info *fbi)
 		if (display->driver->resume)
 			r = display->driver->resume(display);
 
-		if ((display->caps & OMAP_DSS_DISPLAY_CAP_MANUAL_UPDATE) &&
-				d->update_mode == OMAPFB_AUTO_UPDATE &&
-				!d->auto_update_work_enabled)
-			omapfb_start_auto_update(fbdev, display);
-
 		break;
 
 	case FB_BLANK_NORMAL:
@@ -2368,35 +2363,6 @@ static int omapfb_init_display(struct omapfb2_device *fbdev,
 
 	d->fbdev = fbdev;
 
-	if (dssdev->caps & OMAP_DSS_DISPLAY_CAP_MANUAL_UPDATE) {
-		u16 w, h;
-
-		if (auto_update) {
-			omapfb_start_auto_update(fbdev, dssdev);
-			d->update_mode = OMAPFB_AUTO_UPDATE;
-		} else {
-			d->update_mode = OMAPFB_MANUAL_UPDATE;
-		}
-
-		if (dssdrv->enable_te) {
-			r = dssdrv->enable_te(dssdev, 1);
-			if (r) {
-				dev_err(fbdev->dev, "Failed to set TE\n");
-				return r;
-			}
-		}
-
-		dssdrv->get_resolution(dssdev, &w, &h);
-		r = dssdrv->update(dssdev, 0, 0, w, h);
-		if (r) {
-			dev_err(fbdev->dev,
-					"Failed to update display\n");
-			return r;
-		}
-	} else {
-		d->update_mode = OMAPFB_AUTO_UPDATE;
-	}
-
 	return 0;
 }
 
@@ -2486,10 +2452,12 @@ static int omapfb_probe(struct platform_device *pdev)
 
 		d = &fbdev->displays[fbdev->num_displays++];
 		d->dssdev = dssdev;
-		if (dssdev->caps & OMAP_DSS_DISPLAY_CAP_MANUAL_UPDATE)
-			d->update_mode = OMAPFB_MANUAL_UPDATE;
-		else
-			d->update_mode = OMAPFB_AUTO_UPDATE;
+
+		notifier = kzalloc(sizeof(struct omapfb_notifier_block),
+								   GFP_KERNEL);
+		notifier->notifier.notifier_call = omapfb_notifier;
+		notifier->fbdev = fbdev;
+		omap_dss_add_notify(dssdev, &notifier->notifier);
 	}
 
 	if (r)
