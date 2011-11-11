@@ -32,6 +32,7 @@
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
 #include <linux/clk.h>
+#include <linux/cpufreq.h>
 #include <video/omapdss.h>
 #if defined(CONFIG_SND_OMAP_SOC_OMAP4_HDMI) || \
 	defined(CONFIG_SND_OMAP_SOC_OMAP4_HDMI_MODULE)
@@ -70,9 +71,13 @@ static struct {
 	struct hdmi_ip_data ip_data;
 	int code;
 	int mode;
+	int prevent_opp50;
 
 	struct clk *sys_clk;
 } hdmi;
+
+/* 1080p is 148.5Mhz, kill OPP50 with some margin */
+#define KHZ_OPP50_DEFEAT_THRESHOLD 90000
 
 /*
  * Logic for the below structure :
@@ -328,6 +333,7 @@ static int hdmi_power_on(struct omap_dss_device *dssdev)
 	int r, code = 0;
 	struct omap_video_timings *p;
 	unsigned long phy;
+	int cpu;
 
 	r = hdmi_runtime_get();
 	if (r)
@@ -345,6 +351,12 @@ static int hdmi_power_on(struct omap_dss_device *dssdev)
 	update_hdmi_timings(&hdmi.ip_data.cfg, p, code);
 
 	phy = p->pixel_clock;
+	hdmi.prevent_opp50 = phy > KHZ_OPP50_DEFEAT_THRESHOLD;
+
+	/* make potential change to policy known to cpufreq */
+
+	for_each_online_cpu(cpu)
+		cpufreq_update_policy(cpu);
 
 	hdmi_compute_pll(dssdev, phy, &hdmi.ip_data.pll_data);
 
@@ -744,6 +756,30 @@ static void hdmi_put_clocks(void)
 		clk_put(hdmi.sys_clk);
 }
 
+static int hdmi_cpufreq_notify(struct notifier_block *block,
+					       unsigned long event, void *data)
+{
+	struct cpufreq_policy *policy = data;
+
+	if (event != CPUFREQ_ADJUST)
+		return 0;
+
+	pr_err("hdmi_cpufreq_notify: prevent_opp50=%d\n", hdmi.prevent_opp50);
+
+	/*
+	 * Disable OPP50 if doing high bandwidth video
+	 * HACK we 'magically know' OPP50 is 350MHz
+	 */
+	if (hdmi.prevent_opp50)
+		cpufreq_verify_within_limits(policy, 351000, policy->max);
+
+	return 0;
+}
+
+static struct notifier_block hdmi_cpufreq_notifier_block = {
+	.notifier_call = hdmi_cpufreq_notify,
+};
+
 /* HDMI HW IP initialisation */
 static int omapdss_hdmihw_probe(struct platform_device *pdev)
 {
@@ -774,6 +810,9 @@ static int omapdss_hdmihw_probe(struct platform_device *pdev)
 		iounmap(hdmi.ip_data.base_wp);
 		return r;
 	}
+
+	r = cpufreq_register_notifier(&hdmi_cpufreq_notifier_block,
+						      CPUFREQ_POLICY_NOTIFIER);
 
 	pm_runtime_enable(&pdev->dev);
 
@@ -808,6 +847,8 @@ static int omapdss_hdmihw_remove(struct platform_device *pdev)
 #endif
 
 	pm_runtime_disable(&pdev->dev);
+
+	cpufreq_unregister_notifier(&hdmi_cpufreq_notifier_block, CPUFREQ_POLICY_NOTIFIER);
 
 	hdmi_put_clocks();
 
