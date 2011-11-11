@@ -285,8 +285,6 @@ PVRSRV_ERROR SysInitialise(IMG_VOID)
 	SGX_TIMING_INFORMATION*	psTimingInfo;
 #endif
 
-	pr_err("++++++++++ SysInitialise\n");
-
 	gpsSysData = &gsSysData;
 	OSMemSet(gpsSysData, 0, sizeof(SYS_DATA));
 
