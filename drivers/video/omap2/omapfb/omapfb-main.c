@@ -2452,12 +2452,13 @@ static int omapfb_probe(struct platform_device *pdev)
 
 		d = &fbdev->displays[fbdev->num_displays++];
 		d->dssdev = dssdev;
-
+#if 0
 		notifier = kzalloc(sizeof(struct omapfb_notifier_block),
 								   GFP_KERNEL);
 		notifier->notifier.notifier_call = omapfb_notifier;
 		notifier->fbdev = fbdev;
 		omap_dss_add_notify(dssdev, &notifier->notifier);
+#endif
 	}
 
 	if (r)

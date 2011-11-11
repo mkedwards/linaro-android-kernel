@@ -200,7 +200,6 @@ static void OMAPLFBFlipNoLock(OMAPLFB_SWAPCHAIN *psSwapChain,
 		overlay->get_overlay_info( overlay, &overlay_info );
 
 		overlay_info.paddr = framebuffer->fix.smem_start + fb_offset;
-		overlay_info.vaddr = framebuffer->screen_base + fb_offset;
 		overlay->set_overlay_info(overlay, &overlay_info);
 
 		if (manager) {

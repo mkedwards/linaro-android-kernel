@@ -167,28 +167,6 @@ static const int code_vesa[85] = {
 
 static const u8 edid_header[8] = {0x0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x0};
 
-static inline void hdmi_write_reg(const struct hdmi_reg idx, u32 val)
-{
-	__raw_writel(val, hdmi.base_wp + idx.idx);
-}
-
-static inline u32 hdmi_read_reg(const struct hdmi_reg idx)
-{
-	return __raw_readl(hdmi.base_wp + idx.idx);
-}
-
-static inline int hdmi_wait_for_bit_change(const struct hdmi_reg idx,
-				int b2, int b1, u32 val)
-{
-	u32 t = 0;
-	while (val != REG_GET(idx, b2, b1)) {
-		udelay(1);
-		if (t++ > 20000)
-			return !val;
-	}
-	return val;
-}
-
 static int hdmi_runtime_get(void)
 {
 	int r;
@@ -218,220 +196,24 @@ int hdmi_init_display(struct omap_dss_device *dssdev)
 	return 0;
 }
 
-static int hdmi_pll_init(enum hdmi_clk_refsel refsel, int dcofreq,
-		struct hdmi_pll_info *fmt, u16 sd)
-{
-	u32 r;
-
-	/* PLL start always use manual mode */
-	REG_FLD_MOD(PLLCTRL_PLL_CONTROL, 0x0, 0, 0);
-
-	r = hdmi_read_reg(PLLCTRL_CFG1);
-	r = FLD_MOD(r, fmt->regm, 20, 9); /* CFG1_PLL_REGM */
-	r = FLD_MOD(r, fmt->regn - 1, 8, 1);  /* CFG1_PLL_REGN */
-
-	hdmi_write_reg(PLLCTRL_CFG1, r);
-
-	r = hdmi_read_reg(PLLCTRL_CFG2);
-
-	r = FLD_MOD(r, 0x0, 12, 12); /* PLL_HIGHFREQ divide by 2 */
-	r = FLD_MOD(r, 0x1, 13, 13); /* PLL_REFEN */
-	r = FLD_MOD(r, 0x0, 14, 14); /* PHY_CLKINEN de-assert during locking */
-
-	if (dcofreq) {
-		/* divider programming for frequency beyond 1000Mhz */
-		REG_FLD_MOD(PLLCTRL_CFG3, sd, 17, 10);
-		r = FLD_MOD(r, 0x4, 3, 1); /* 1000MHz and 2000MHz */
-	} else {
-		r = FLD_MOD(r, 0x2, 3, 1); /* 500MHz and 1000MHz */
-	}
-
-	hdmi_write_reg(PLLCTRL_CFG2, r);
-
-	r = hdmi_read_reg(PLLCTRL_CFG4);
-	r = FLD_MOD(r, fmt->regm2, 24, 18);
-	r = FLD_MOD(r, fmt->regmf, 17, 0);
-
-	hdmi_write_reg(PLLCTRL_CFG4, r);
-
-	/* go now */
-	REG_FLD_MOD(PLLCTRL_PLL_GO, 0x1, 0, 0);
-
-	/* wait for bit change */
-	if (hdmi_wait_for_bit_change(PLLCTRL_PLL_GO, 0, 0, 1) != 1) {
-		DSSERR("PLL GO bit not set\n");
-		return -ETIMEDOUT;
-	}
-
-	/* Wait till the lock bit is set in PLL status */
-	if (hdmi_wait_for_bit_change(PLLCTRL_PLL_STATUS, 1, 1, 1) != 1) {
-		DSSWARN("cannot lock PLL\n");
-		DSSWARN("CFG1 0x%x\n",
-			hdmi_read_reg(PLLCTRL_CFG1));
-		DSSWARN("CFG2 0x%x\n",
-			hdmi_read_reg(PLLCTRL_CFG2));
-		DSSWARN("CFG4 0x%x\n",
-			hdmi_read_reg(PLLCTRL_CFG4));
-		return -ETIMEDOUT;
-	}
-
-	DSSDBG("PLL locked!\n");
-
-	return 0;
-}
-
-/* PHY_PWR_CMD */
-static int hdmi_set_phy_pwr(enum hdmi_phy_pwr val)
-{
-	/* Command for power control of HDMI PHY */
-	REG_FLD_MOD(HDMI_WP_PWR_CTRL, val, 7, 6);
-
-	/* Status of the power control of HDMI PHY */
-	if (hdmi_wait_for_bit_change(HDMI_WP_PWR_CTRL, 5, 4, val) != val) {
-		DSSERR("Failed to set PHY power mode to %d\n", val);
-		return -ETIMEDOUT;
-	}
-
-	return 0;
-}
-
-/* PLL_PWR_CMD */
-static int hdmi_set_pll_pwr(enum hdmi_pll_pwr val)
-{
-	/* Command for power control of HDMI PLL */
-	REG_FLD_MOD(HDMI_WP_PWR_CTRL, val, 3, 2);
-
-	/* wait till PHY_PWR_STATUS is set */
-	if (hdmi_wait_for_bit_change(HDMI_WP_PWR_CTRL, 1, 0, val) != val) {
-		DSSERR("Failed to set PHY_PWR_STATUS\n");
-		return -ETIMEDOUT;
-	}
-
-	return 0;
-}
-
-static int hdmi_pll_reset(void)
-{
-	/* SYSRESET  controlled by power FSM */
-	REG_FLD_MOD(PLLCTRL_PLL_CONTROL, 0x0, 3, 3);
-
-	/* READ 0x0 reset is in progress */
-	if (hdmi_wait_for_bit_change(PLLCTRL_PLL_STATUS, 0, 0, 1) != 1) {
-		DSSERR("Failed to sysreset PLL\n");
-		return -ETIMEDOUT;
-	}
-
-	return 0;
-}
-
-static int hdmi_phy_init(void)
-{
-	u16 r = 0;
-
-	r = hdmi_set_phy_pwr(HDMI_PHYPWRCMD_LDOON);
-	if (r)
-		return r;
-
-	r = hdmi_set_phy_pwr(HDMI_PHYPWRCMD_TXON);
-	if (r)
-		return r;
-
-	/*
-	 * Read address 0 in order to get the SCP reset done completed
-	 * Dummy access performed to make sure reset is done
-	 */
-	hdmi_read_reg(HDMI_TXPHY_TX_CTRL);
-
-	/*
-	 * Write to phy address 0 to configure the clock
-	 * use HFBITCLK write HDMI_TXPHY_TX_CONTROL_FREQOUT field
-	 */
-	REG_FLD_MOD(HDMI_TXPHY_TX_CTRL, 0x1, 31, 30);
-
-	/* Write to phy address 1 to start HDMI line (TXVALID and TMDSCLKEN) */
-	hdmi_write_reg(HDMI_TXPHY_DIGITAL_CTRL, 0xF0000000);
-
-	/* Setup max LDO voltage */
-	REG_FLD_MOD(HDMI_TXPHY_POWER_CTRL, 0xB, 3, 0);
-
-	/* Write to phy address 3 to change the polarity control */
-	REG_FLD_MOD(HDMI_TXPHY_PAD_CFG_CTRL, 0x1, 27, 27);
-
-	return 0;
-}
-
-static int hdmi_wait_softreset(void)
-{
-	/* reset W1 */
-	REG_FLD_MOD(HDMI_WP_SYSCONFIG, 0x1, 0, 0);
-
-	/* wait till SOFTRESET == 0 */
-	if (hdmi_wait_for_bit_change(HDMI_WP_SYSCONFIG, 0, 0, 0) != 0) {
-		DSSERR("sysconfig reset failed\n");
-		return -ETIMEDOUT;
-	}
-
-	return 0;
-}
-
- static int hdmi_pll_program(struct hdmi_pll_info *fmt)
- {
- 	u16 r = 0;
- 	enum hdmi_clk_refsel refsel;
- 
-	/* wait for wrapper reset */
-	r = hdmi_wait_softreset();
-	if (r)
-		return r;
-
-	r = hdmi_set_pll_pwr(HDMI_PLLPWRCMD_ALLOFF);
-	if (r) {
-		pr_err("hdmi_set_pll_pwr says %d\n", r);
-		return r;
-	}
-
-	r = hdmi_set_pll_pwr(HDMI_PLLPWRCMD_BOTHON_ALLCLKS);
-	if (r) {
-		pr_err("hdmi_set_pll_pwr on says %d\n", r);
-		return r;
-	}
-
-	r = hdmi_pll_reset();
-	if (r) {
-		pr_err("hdmi_pll_reset says %d\n", r);
-		return r;
-	}
-
-	refsel = HDMI_REFSEL_SYSCLK;
-
-	r = hdmi_pll_init(refsel, fmt->dcofreq, fmt, fmt->regsd);
-	if (r) {
-		pr_err("hdmi_pll_init says %d\n", r);
-		return r;
-	}
-
-	return 0;
-}
-
-
 static int get_timings_index(void)
 {
-	int code;
+       int code;
 
-	if (hdmi.mode == 0)
-		code = code_vesa[hdmi.code];
-	else
-		code = code_cea[hdmi.code];
+       if (hdmi.mode == 0)
+               code = code_vesa[hdmi.code];
+       else
+               code = code_cea[hdmi.code];
 
-	if (code == -1)	{
-		/* HDMI code 4 corresponds to 640 * 480 VGA */
-		hdmi.code = 4;
-		/* DVI mode 1 corresponds to HDMI 0 to DVI */
-		hdmi.mode = HDMI_DVI;
+       if (code == -1) {
+               /* HDMI code 4 corresponds to 640 * 480 VGA */
+               hdmi.code = 4;
+               /* DVI mode 1 corresponds to HDMI 0 to DVI */
+               hdmi.mode = HDMI_DVI;
 
-		code = code_vesa[hdmi.code];
-	}
-	return code;
+               code = code_vesa[hdmi.code];
+       }
+       return code;
 }
 
 static struct hdmi_cm hdmi_get_code(struct omap_video_timings *timing)
