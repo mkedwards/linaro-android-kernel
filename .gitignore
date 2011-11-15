@@ -84,3 +84,6 @@ GTAGS
 *.orig
 *~
 \#*#
+
+# Android build procedure cruft
+/modules_for_android/
