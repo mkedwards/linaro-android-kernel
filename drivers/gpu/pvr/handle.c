@@ -448,10 +448,10 @@ PVRSRV_ERROR GetHandleStructure(PVRSRV_HANDLE_BASE *psBase, struct sHandle **pps
 	IMG_UINT32 ui32Index = HANDLE_TO_INDEX(hHandle);
 	struct sHandle *psHandle;
 
-	
 	if (!INDEX_IS_VALID(psBase, ui32Index))
 	{
 		PVR_DPF((PVR_DBG_ERROR, "GetHandleStructure: Handle index out of range (%u >= %u)", ui32Index, psBase->ui32TotalHandCount));
+		dump_stack();
 #if defined (SUPPORT_SID_INTERFACE)
 		PVR_DBG_BREAK
 #endif

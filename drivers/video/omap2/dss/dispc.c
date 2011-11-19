@@ -3135,6 +3135,9 @@ static void print_irq_status(u32 status)
  * clock later in the function. */
 static irqreturn_t omap_dispc_irq_handler(int irq, void *arg)
 {
+#ifdef DEBUG
+	extern unsigned int dss_debug;
+#endif
 	int i;
 	u32 irqstatus, irqenable;
 	u32 handledirqs = 0;

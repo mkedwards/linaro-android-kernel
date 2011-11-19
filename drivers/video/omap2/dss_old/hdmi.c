@@ -1829,6 +1829,7 @@ static struct hdmi_cm hdmi_get_code(struct omap_video_timings *timing)
 
 static int hdmi_get_edid(struct omap_dss_device *dssdev,  u8 *buf, int len)
 {
+	extern unsigned int dss_debug;
 	u8 i = 0, flag = 0, mark = 0;
 	int count, offset, effective_addrs, current_descriptor_addrs = 0;
 	struct HDMI_EDID * edid_st = (struct HDMI_EDID *)edid;

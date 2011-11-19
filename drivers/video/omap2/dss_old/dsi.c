@@ -688,6 +688,7 @@ static inline void dsi_enable_pll_clock(bool enable)
 #ifdef DEBUG
 static void _dsi_print_reset_status(void)
 {
+	extern unsigned int dss_debug;
 	u32 l;
 
 	if (!dss_debug)
